@@ -1,0 +1,14 @@
+services:
+  users-api:
+    # По умолчанию собирается локально; на сервере можно задать IMAGE=registry.gitlab.com/...:tag
+    image: ${IMAGE:-users-api:local}
+    build: .
+    container_name: users-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - users-data:/data
+    restart: unless-stopped
+
+volumes:
+  users-data:
