@@ -137,8 +137,13 @@ branch-пайплайн не создаётся, чтобы один комми�
 `when: always` сохраняет отчёт и при упавших тестах, чтобы было видно, что сломалось.
 
 ### `build`
-- Образ `docker:27.5` и сервис `docker:27.5-dind` (Docker-in-Docker): внутри джоба поднимается свой Docker-демон,
-  которому клиент отправляет команды сборки. `DOCKER_TLS_CERTDIR` включает TLS между клиентом и демоном.
+- Образ `docker:27.5` содержит только Docker-клиент. Команды сборки идут в Docker хоста через сокет
+  `/var/run/docker.sock`, который runner пробрасывает в контейнер джоба (см. «Что настроить в GitLab»).
+  Docker-in-Docker не используется: ему нужен privileged-режим, и у вложенного демона свой `localhost`,
+  из-за чего он не видит локальный registry.
+- Сначала джоб проверяет, что `CI_REGISTRY` не пустой. Если в GitLab не включён Container Registry,
+  переменные пустые, и `docker login` без адреса пошёл бы на Docker Hub с непонятной ошибкой
+  `unauthorized: incorrect username or password`.
 - `docker login` в GitLab Container Registry. Переменные `CI_REGISTRY`, `CI_REGISTRY_USER`,
   `CI_REGISTRY_PASSWORD` GitLab выдаёт каждому джобу сам, настраивать их не нужно.
 - `docker pull latest` + `--cache-from` + `BUILDKIT_INLINE_CACHE=1`: слои прошлого образа используются как кэш.
@@ -168,9 +173,14 @@ branch-пайплайн не создаётся, чтобы один комми�
 1. **Проект в GitLab.** Этот репозиторий размещён на GitHub. Чтобы пайплайн запускался, проект нужно
    импортировать в GitLab (*New project → Import project*) или подключить как
    *Run CI/CD for external repository* / настроить pull mirroring.
-2. **Runner** с executor `docker` в режиме `privileged = true`: это нужно для Docker-in-Docker
-   в джобе `build`. Shared runners на gitlab.com уже так настроены.
-3. **Container Registry** включён в проекте (*Settings → General → Visibility → Container registry*).
+2. **Runner** с executor `docker`, которому в `config.toml` проброшен Docker-сокет хоста:
+   ```toml
+   [runners.docker]
+     volumes = ["/var/run/docker.sock:/var/run/docker.sock", "/cache"]
+   ```
+3. **Container Registry** включён на сервере GitLab (`registry_external_url` в конфигурации) и в проекте
+   (*Settings → General → Visibility → Container registry*). Если registry работает по http, его адрес
+   нужно добавить в `insecure-registries` в `/etc/docker/daemon.json` того Docker, который пушит и скачивает образ.
 4. **CI/CD Variables** (*Settings → CI/CD → Variables*):
 
    | Переменная        | Тип      | Значение                                                             |
