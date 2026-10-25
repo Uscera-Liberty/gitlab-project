@@ -7,7 +7,11 @@
 #   DEPLOY_USER      - пользователь на сервере (должен иметь доступ к docker)
 #   SSH_KNOWN_HOSTS  - (рекомендуется) вывод `ssh-keyscan <DEPLOY_HOST>`
 # CI_REGISTRY, CI_REGISTRY_IMAGE, CI_REGISTRY_USER, CI_REGISTRY_PASSWORD, CI_JOB_TOKEN
-# GitLab подставляет сам.
+# GitLab подставляет сам, если в нём включён Container Registry.
+#
+# Требование к runner'у (docker executor): в config.toml в [runners.docker]
+#   volumes = ["/var/run/docker.sock:/var/run/docker.sock", "/cache"]
+# Джоб build собирает образ Docker'ом хоста через этот сокет, без docker:dind.
 
 stages:
   - lint
@@ -63,15 +67,17 @@ test:
 build:
   stage: build
   image: docker:27.5
-  services:
-    - docker:27.5-dind
-  variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_BUILDKIT: "1"
   before_script:
+    # Без registry переменные пустые и docker login молча уходит на Docker Hub
+    - |
+      if [ -z "$CI_REGISTRY" ]; then
+        echo "CI_REGISTRY пуст: включите Container Registry в GitLab (registry_external_url)"
+        exit 1
+      fi
+    - docker info --format 'Docker daemon {{.ServerVersion}}'
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
-    # Прошлый latest используется как кэш слоёв, чтобы не ставить зависимости заново
+    # Прошлый latest используется как кэш слоёв (пригодится и на runner'е без локального кэша)
     - docker pull "$IMAGE_LATEST" || true
     - >
       docker build
